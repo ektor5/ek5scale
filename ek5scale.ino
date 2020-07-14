@@ -1,77 +1,92 @@
+#include <TimerOne.h>
 #include <Streaming.h>
 #include "HX711.h"
 
 #define cout Serial
 #define endl '\n'
 const int BP1 = A0, BP2 = A1, BP3 = A2, BP4 = A3; //backplanes
-int S1 = A4, S2 = 2, S3 = 3, S4 = 4, S5 = 5, S6 = 6, S7 = 7, S8 = 8, S9 = 9; //segment outputs.  S1 is always blanked, S2&3 are driven
+int S1 = A4, S2 = 1, S3 = 0, S4 = 4, S5 = 5, S6 = 6, S7 = 7, S8 = 8, S9 = 9; //segment outputs.  S1 is always blanked, S2&3 are driven
 int LOADCELL_DOUT_PIN = 11, LOADCELL_SCK_PIN = 12;
+int button = 2;
 
-int weight = 0;
+int weight = 8888;
 int oldst;
-
+int statenow = 0;
+bool tare = 1;
 HX711 scale;
 
 void setup()
 {
-  Serial.begin(19200);
+  //Serial.begin(19200);
   cout << "Hello from the clock LCD test mule \n";
   pinMode(S1, OUTPUT); pinMode(S2, OUTPUT); pinMode(S3, OUTPUT); //segments are live
   pinMode(S4, OUTPUT); pinMode(S5, OUTPUT);
   pinMode(S6, OUTPUT); pinMode(S7, OUTPUT);
   pinMode(S8, OUTPUT); pinMode(S9, OUTPUT);
+  pinMode(button, INPUT_PULLUP);
 
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
 
+  Timer1.initialize(4000);
+  Timer1.attachInterrupt(drivelcd); // blinkLED to run every 0.15 seconds
   oldst = (millis() / 100);
 
-  Serial.println("Before setting up the scale:");
-  Serial.print("read: \t\t");
-  Serial.println(scale.read());      // print a raw reading from the ADC
+//  Serial.println("Before setting up the scale:");
+//  Serial.print("read: \t\t");
+//  Serial.println(scale.read());      // print a raw reading from the ADC
+//
+//  Serial.print("read average: \t\t");
+//  Serial.println(scale.read_average(20));   // print the average of 20 readings from the ADC
+//
+//  Serial.print("get value: \t\t");
+//  Serial.println(scale.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight (not set yet)
+//
+//  Serial.print("get units: \t\t");
+//  Serial.println(scale.get_units(5), 1);  // print the average of 5 readings from the ADC minus tare weight (not set) divided
+//  // by the SCALE parameter (not set yet)
 
-  Serial.print("read average: \t\t");
-  Serial.println(scale.read_average(20));   // print the average of 20 readings from the ADC
+  scale.set_scale(328.f);                      // this value is obtained by calibrating the scale with known weights; see the README for details
+  //scale.tare();               // reset the scale to 0
 
-  Serial.print("get value: \t\t");
-  Serial.println(scale.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight (not set yet)
-
-  Serial.print("get units: \t\t");
-  Serial.println(scale.get_units(5), 1);  // print the average of 5 readings from the ADC minus tare weight (not set) divided
-  // by the SCALE parameter (not set yet)
-
-  scale.set_scale(2280.f);                      // this value is obtained by calibrating the scale with known weights; see the README for details
-  scale.tare();               // reset the scale to 0
-
-  Serial.println("After setting up the scale:");
-
-  Serial.print("read: \t\t");
-  Serial.println(scale.read());                 // print a raw reading from the ADC
-
-  Serial.print("read average: \t\t");
-  Serial.println(scale.read_average(20));       // print the average of 20 readings from the ADC
-
-  Serial.print("get value: \t\t");
-  Serial.println(scale.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight, set with tare()
-
-  Serial.print("get units: \t\t");
-  Serial.println(scale.get_units(5), 1);        // print the average of 5 readings from the ADC minus tare weight, divided
+//  Serial.println("After setting up the scale:");
+//
+//  Serial.print("read: \t\t");
+//  Serial.println(scale.read());                 // print a raw reading from the ADC
+//
+//  Serial.print("read average: \t\t");
+//  Serial.println(scale.read_average(20));       // print the average of 20 readings from the ADC
+//
+//  Serial.print("get value: \t\t");
+//  Serial.println(scale.get_value(5));   // print the average of 5 readings from the ADC minus the tare weight, set with tare()
+//
+//  Serial.print("get units: \t\t");
+//  Serial.println(scale.get_units(5), 1);        // print the average of 5 readings from the ADC minus tare weight, divided
   // by the SCALE parameter set with set_scale
+  attachInterrupt(digitalPinToInterrupt(button), scaleTare, RISING);
 
 }
 void loop() {
-  if (millis() / 100 - oldst > 5) {
-    weight = scale.get_units(1);
-    oldst = (millis() / 100);
-    cout << weight << endl;
 
+  if (tare){
+    weight = 8888;
+    scale.tare();
+    tare = 0;
   }
+  weight = scale.get_units(7);
+
+
+  //delay(50);
   //cout << weight << endl;
   //int displaydigit = (millis() / 1000) % 9999; //test pattern cycles from 0 to 10
-  drivelcd(weight);
+  //drivelcd(weight);
+}
+
+void scaleTare() {
+  tare = 1;
 }
 
 
-void drivelcd(int digit_) { //drive the LCD to display a digit
+void drivelcd() { //drive the LCD to display a digit
   //each of the LCD backplanes is cycled low then high for 4ms while the others are held at a middle-voltage
   //the segments are lit by setting them opposite to the active backplane
   //each bit in the digit segment table below defines the state of a segment for a particular backplane for that digit
@@ -94,18 +109,18 @@ void drivelcd(int digit_) { //drive the LCD to display a digit
   static int stateprev = 8; //tells us when we change states
   bool minus;
   int digit;
-  if ( digit_ > 0 ) {
-    digit = digit_;
+  if ( weight >= 0 ) {
+    digit = weight;
     minus = 0;
   } else {
-    digit = -digit_;
+    digit = -weight;
     minus = 1;
   }
-  int statenow = (millis() / 4) & 0x07; //cycles from 0-7 changing every 4 ms
+  statenow = ++statenow % 8; //cycles from 0-7 changing every 4 ms
   int digit4 = digit % 10;
-  int digit3 = digit > 10 ?  (digit / 10) % 10   : 10;
-  int digit2 = digit > 100 ? (digit / 100) % 10  : 10;
-  int digit1 = digit > 1000 ? (digit / 1000) % 10 : 10;
+  int digit3 = digit >= 10 ?  (digit / 10) % 10   : 10;
+  int digit2 = digit >= 100 ? (digit / 100) % 10  : 10;
+  int digit1 = digit >= 1000 ? (digit / 1000) % 10 : 10;
 
   if (statenow != stateprev) { //if the state has changed
     //cout <<  " " << digit4 << " "<< digit3<< " " << digit2 << " " << digit1 << endl;
